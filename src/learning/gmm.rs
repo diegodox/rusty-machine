@@ -67,6 +67,45 @@ pub struct GaussianMixtureModel {
     pub cov_option: CovOption,
 }
 
+impl GaussianMixtureModel {
+    /// Train the model using inputs.
+    pub fn train_with_init_means(&mut self, inputs: &Matrix<f64>, init_means: Matrix<f64>) -> LearningResult<()> {
+        let reg_value = if inputs.rows() > 1 {
+            1f64 / (inputs.rows() - 1) as f64
+        } else {
+            return Err(Error::new(ErrorKind::InvalidData, "Only one row of data provided."));
+        };
+
+        // Initialization:
+        let k = self.comp_count;
+
+        self.model_covars = {
+            let cov_mat = self.initialize_covariances(inputs, reg_value)?;
+            Some(vec![cov_mat; k])
+        };
+
+        assert_eq!(init_means.rows(), k);
+        assert_eq!(init_means.cols(), inputs.cols());
+        self.model_means = Some(init_means);
+
+        for _ in 0..self.max_iters {
+            let log_lik_0 = self.log_lik;
+
+            let (weights, log_lik_1) = self.membership_weights(inputs)?;
+
+            if (log_lik_1 - log_lik_0).abs() < 1e-15 {
+                break;
+            }
+
+            self.log_lik = log_lik_1;
+
+            self.update_params(inputs, weights);
+        }
+
+        Ok(())
+    }
+}
+
 impl UnSupModel<Matrix<f64>, Matrix<f64>> for GaussianMixtureModel {
     /// Train the model using inputs.
     fn train(&mut self, inputs: &Matrix<f64>) -> LearningResult<()> {
